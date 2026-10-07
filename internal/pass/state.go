@@ -1,6 +1,7 @@
 package pass
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -12,6 +13,10 @@ import (
 	"orbitlink/internal/recorder"
 	"orbitlink/internal/store"
 )
+
+// ErrNotFound marks a missing pass so callers can distinguish a vacuous
+// bookkeeping target from a persistence failure.
+var ErrNotFound = errors.New("pass not found")
 
 type Service struct {
 	mu       sync.RWMutex
@@ -190,7 +195,7 @@ func (s *Service) update(passID string, apply func(*Pass) error) error {
 	defer s.mu.Unlock()
 	value, found := s.passes[passID]
 	if !found {
-		return fmt.Errorf("pass %s not found", passID)
+		return fmt.Errorf("pass %s: %w", passID, ErrNotFound)
 	}
 	if err := apply(&value); err != nil {
 		return err

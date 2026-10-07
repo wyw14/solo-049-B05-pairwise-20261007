@@ -77,6 +77,26 @@ func (f *Fleet) Release(antennaID, passID string, generation int64) error {
 	return f.flushLocked()
 }
 
+// ReleaseOwner clears ownership held by a pass without touching the antenna
+// mode. Unlike Release it requires no generation match and never flips the
+// antenna back to Idle: a storm-stowed antenna must stay stowed, it just must
+// no longer accept pointing commands from the fenced pass.
+func (f *Fleet) ReleaseOwner(antennaID, passID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	state, found := f.states[antennaID]
+	if !found {
+		return fmt.Errorf("antenna %s not found", antennaID)
+	}
+	if state.OwnerPassID != passID {
+		return nil
+	}
+	state.OwnerPassID = ""
+	state.OwnerGeneration = 0
+	f.states[antennaID] = state
+	return f.flushLocked()
+}
+
 func (f *Fleet) State(id string) (State, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()

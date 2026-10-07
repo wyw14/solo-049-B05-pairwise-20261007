@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -90,6 +91,14 @@ func (r *Runtime) stowAntenna(writer http.ResponseWriter, request *http.Request)
 	}
 	result, err := r.Weather.Handle(request.Context(), weather.WindSample{StationID: "orbitlink", GustMetersPerSecond: input.GustMetersPerSecond, ObservedAt: time.Now().UTC()}, input.PassID, chi.URLParam(request, "antennaID"), input.ChainID)
 	if err != nil {
+		var partial *weather.PartialFailureError
+		if errors.As(err, &partial) {
+			// The hardware is safe and the bookkeeping is parked in the
+			// recovery log; the caller needs the full result, not just an
+			// error string.
+			writeJSON(writer, http.StatusConflict, result)
+			return
+		}
 		writeError(writer, err)
 		return
 	}

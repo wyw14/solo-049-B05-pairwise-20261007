@@ -100,6 +100,31 @@ func (t *Timeline) Release(reservationID string) (Interval, error) {
 	return t.setStatus(reservationID, Released)
 }
 
+// ReleasePass fences every live reservation of a pass. Like the command
+// queue's RetireForPass, a flush failure keeps the in-memory release so the
+// pass stays fenced while the storm recovery log replays the snapshot write.
+func (t *Timeline) ReleasePass(passID string) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	released := 0
+	for antennaID, intervals := range t.byAntenna {
+		for index := range intervals {
+			if intervals[index].PassID == passID && intervals[index].Status != Released {
+				intervals[index].Status = Released
+				released++
+			}
+		}
+		t.byAntenna[antennaID] = intervals
+	}
+	if released == 0 {
+		return 0, nil
+	}
+	if err := t.flushLocked(); err != nil {
+		return released, err
+	}
+	return released, nil
+}
+
 func (t *Timeline) setStatus(reservationID string, status ReservationStatus) (Interval, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

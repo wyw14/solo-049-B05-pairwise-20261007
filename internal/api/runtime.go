@@ -114,7 +114,12 @@ func NewRuntime(stateRoot string) (*Runtime, error) {
 	recordingState := passsvc.NewRecordingState(passes, recorderManager)
 	handovers := handover.NewCoordinator(recordingState, recorderManager, trail)
 	stower := antenna.NewStowController(fleet, trail)
-	weatherCoordinator := weather.NewCoordinator(20, rfController, stower, passes, trail)
+	recoveries, err := weather.NewRecoveryStore(paths)
+	if err != nil {
+		return nil, err
+	}
+	fencer := weather.NewSchedulerFencer(commands, timeline, fleet)
+	weatherCoordinator := weather.NewCoordinator(20, rfController, stower, passes, fencer, recoveries, trail)
 	runtime := &Runtime{
 		StateRoot: stateRoot, Paths: paths, EventLog: log, Audit: trail, Catalog: catalog, Ephemerides: ephemerides,
 		Clock: clockService, Windows: windows, Timeline: timeline, Commands: commands,
@@ -128,6 +133,15 @@ func NewRuntime(stateRoot string) (*Runtime, error) {
 	ephemerides.Subscribe(replanner.ApplyRevision)
 	if err := runtime.seed(); err != nil {
 		return nil, err
+	}
+	// Replay any storm stow whose pass bookkeeping was interrupted before
+	// this process started, so a resurrected pass cannot be scheduled.
+	if report := weatherCoordinator.ReconcilePending(); report.Resolved > 0 || report.Pending > 0 {
+		severity := audit.Info
+		if report.Pending > 0 {
+			severity = audit.Warning
+		}
+		_, _ = trail.Record(audit.Event{Component: "weather", Action: "startup.reconciled", Subject: "storm-recoveries", Severity: severity, Fields: map[string]any{"resolved": report.Resolved, "pending": report.Pending}})
 	}
 	return runtime, nil
 }
@@ -146,6 +160,9 @@ func (r *Runtime) Health() console.Health {
 				components["clock"] = "monotonic-active"
 			}
 		}
+	}
+	if pending := len(r.Weather.PendingRecoveries()); pending > 0 {
+		components["weather"] = fmt.Sprintf("storm-recovery-pending:%d", pending)
 	}
 	return console.Health{Status: "ok", Service: "orbitlink", Now: r.Clock.Now(), StateRoot: r.StateRoot,
 		Components: components,

@@ -17,5 +17,7 @@ type StowResult struct {
 	InhibitConfirmed bool   `json:"inhibit_confirmed"`
 	Stowed           bool   `json:"stowed"`
 	PassFailed       bool   `json:"pass_failed"`
+	PassMissing      bool   `json:"pass_missing,omitempty"`
+	RecoveryID       string `json:"recovery_id,omitempty"`
 	Error            string `json:"error,omitempty"`
 }
