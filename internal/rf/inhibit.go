@@ -30,15 +30,18 @@ func (c *Controller) Inhibit(ctx context.Context, chainID, operationID string) (
 		c.mu.Unlock()
 		return InhibitProof{}, fmt.Errorf("RF chain %s not found", chainID)
 	}
+	original := state
 	state.TransmitEnabled = false
 	state.InhibitOperation = operationID
 	state.UpdatedAt = time.Now().UTC()
 	c.states[chainID] = state
 	err := c.flushLocked()
-	c.mu.Unlock()
 	if err != nil {
+		c.states[chainID] = original
+		c.mu.Unlock()
 		return InhibitProof{}, err
 	}
+	c.mu.Unlock()
 	proof := InhibitProof{ChainID: chainID, Operation: operationID, Confirmed: true, ConfirmedAt: state.UpdatedAt}
 	_, _ = c.audit.Record(audit.Event{Component: "rf", Action: "transmit.inhibited", Subject: chainID, Operation: operationID})
 	return proof, nil

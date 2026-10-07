@@ -185,19 +185,27 @@ func (s *Service) Cancel(passID, reason string) error {
 	})
 }
 
+// update publishes a phase change only when the snapshot write commits, so a
+// failed write never leaves memory diverged from the durable state that a
+// restart would reload.
 func (s *Service) update(passID string, apply func(*Pass) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	value, found := s.passes[passID]
+	original, found := s.passes[passID]
 	if !found {
 		return fmt.Errorf("pass %s not found", passID)
 	}
+	value := original
 	if err := apply(&value); err != nil {
 		return err
 	}
 	value.UpdatedAt = time.Now().UTC()
 	s.passes[passID] = value
-	return s.flushLocked()
+	if err := s.flushLocked(); err != nil {
+		s.passes[passID] = original
+		return err
+	}
+	return nil
 }
 
 func (s *Service) flushLocked() error {

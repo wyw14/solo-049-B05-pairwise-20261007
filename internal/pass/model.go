@@ -18,6 +18,16 @@ const (
 	Canceled  Phase = "canceled"
 )
 
+// Terminal reports whether the phase is final: a terminal pass accepts no
+// further transitions and can no longer be scheduled.
+func (p Phase) Terminal() bool {
+	switch p {
+	case Sealed, Completed, Failed, Canceled:
+		return true
+	}
+	return false
+}
+
 type Window struct {
 	AOS      time.Time `json:"aos"`
 	LOS      time.Time `json:"los"`

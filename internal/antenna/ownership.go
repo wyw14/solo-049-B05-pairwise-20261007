@@ -94,9 +94,16 @@ func (f *Fleet) List() []State {
 	return values
 }
 
+// update publishes a state change only when the snapshot write commits, so a
+// failed write never leaves memory diverged from the durable state.
 func (f *Fleet) update(state State) error {
+	original := f.states[state.ID]
 	f.states[state.ID] = state
-	return f.flushLocked()
+	if err := f.flushLocked(); err != nil {
+		f.states[state.ID] = original
+		return err
+	}
+	return nil
 }
 
 func (f *Fleet) flushLocked() error {

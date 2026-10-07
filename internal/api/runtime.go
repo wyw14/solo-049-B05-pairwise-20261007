@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -114,7 +115,10 @@ func NewRuntime(stateRoot string) (*Runtime, error) {
 	recordingState := passsvc.NewRecordingState(passes, recorderManager)
 	handovers := handover.NewCoordinator(recordingState, recorderManager, trail)
 	stower := antenna.NewStowController(fleet, trail)
-	weatherCoordinator := weather.NewCoordinator(20, rfController, stower, passes, trail)
+	weatherCoordinator, err := weather.NewCoordinator(paths, 20, rfController, stower, passes, trail)
+	if err != nil {
+		return nil, err
+	}
 	runtime := &Runtime{
 		StateRoot: stateRoot, Paths: paths, EventLog: log, Audit: trail, Catalog: catalog, Ephemerides: ephemerides,
 		Clock: clockService, Windows: windows, Timeline: timeline, Commands: commands,
@@ -126,6 +130,10 @@ func NewRuntime(stateRoot string) (*Runtime, error) {
 		Handovers: handovers, Weather: weatherCoordinator, receiverSessions: make(map[string]*receiver.Session),
 	}
 	ephemerides.Subscribe(replanner.ApplyRevision)
+	// Finish any storm operation interrupted before its pass update committed,
+	// so a restarted station never schedules a pass against stowed hardware.
+	// Failures are recorded in the audit trail by Recover itself.
+	_ = weatherCoordinator.Recover(context.Background())
 	if err := runtime.seed(); err != nil {
 		return nil, err
 	}
